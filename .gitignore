@@ -227,3 +227,5 @@ __marimo__/
 .ipynb_checkpoints/
 __pycache__/
 logs/
+
+agent/
