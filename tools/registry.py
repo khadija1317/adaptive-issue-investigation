@@ -16,6 +16,7 @@ TOOL_SCHEMAS = [
         "Re-run training with changes applied to the ORIGINAL config (not cumulative). Max 3 per investigation. Returns train/val metrics and model size.",
         {"changes": {"type": "object", "additionalProperties": False, "properties": {
             "max_depth": {"type": "integer", "minimum": 1},
+            "min_samples_leaf": {"type": "integer", "minimum": 1},
             "C": {"type": "number", "exclusiveMinimum": 0},
             "train_fraction": {"type": "number", "description": "fraction of the available training pool to use (1.0 = all)"},
             "class_weight": {"type": "string", "enum": ["balanced"]},

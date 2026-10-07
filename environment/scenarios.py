@@ -14,9 +14,9 @@ class Scenario:
     split_injector: Optional[Callable] = None   # (splits, rng=) after splitting
 
 SCENARIOS = {
- "S1": Scenario("S1", "breast_cancer", ExperimentConfig(model="logreg", C=0.1, scaling="standard"),
+ "S1": Scenario("S1", "breast_cancer", ExperimentConfig(model="logreg", C=0.003, scaling="standard"),
       "Accuracy is high but the model misses positive cases.",
-      data_injector=partial(inj.make_imbalanced, minority_class=0, minority_frac=0.05)),
+      data_injector=partial(inj.make_imbalanced, minority_class=0, minority_frac=0.15)),
  "S2": Scenario("S2", "wine", ExperimentConfig(model="tree", train_fraction=0.15),
       "Perfect train score, weaker validation score."),
  "S3": Scenario("S3", "breast_cancer", ExperimentConfig(model="tree"),

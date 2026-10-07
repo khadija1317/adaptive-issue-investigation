@@ -33,7 +33,7 @@ def _corr(X, y):    # Pearson corr of every column with the target, vectorised
 class Session:
     MAX_EXPERIMENTS = 3
     KNOBS = {"max_depth", "C", "train_fraction", "class_weight",
-             "drop_features", "scaling", "split_strategy"}
+             "drop_features", "scaling", "split_strategy","min_samples_leaf"}
 
     def __init__(self, scenario):
         self.scenario = scenario
@@ -43,7 +43,7 @@ class Session:
     # What the agent is told up front (basics live here, not in a tool).
     def task_info(self):
         c, r = self.scenario.base_config, self.rec
-        hp = {"max_depth": c.max_depth} if c.model == "tree" else {"C": c.C}
+        hp = {"max_depth": c.max_depth, "min_samples_leaf": c.min_samples_leaf} if c.model == "tree" else {"C": c.C}
         return {"complaint": self.scenario.complaint, "dataset": self.scenario.dataset,
                 "model": c.model, "hyperparameters": hp, "class_weight": c.class_weight,
                 "scaling": c.scaling, "n_train": len(r.y["train"]), "n_val": len(r.y["val"]),
@@ -128,6 +128,9 @@ class Session:
         bad = set(changes) - self.KNOBS
         if bad: return _err(T, a, f"unknown knobs {sorted(bad)}; allowed: {sorted(self.KNOBS)}")
         if "max_depth" in changes and base.model != "tree": return _err(T, a, "max_depth applies to tree models only")
+        if "min_samples_leaf" in changes and base.model != "tree": return _err(T, a, "min_samples_leaf applies to tree models only")
+        msl = changes.get("min_samples_leaf", 1)
+        if not isinstance(msl, int) or msl < 1: return _err(T, a, "min_samples_leaf must be an integer >= 1")
         if "C" in changes and base.model != "logreg": return _err(T, a, "C applies to logreg models only")
         tf = changes.get("train_fraction", 1.0)
         if not isinstance(tf, (int, float)) or not 0 < tf <= 1: return _err(T, a, "train_fraction must be in (0, 1]")
