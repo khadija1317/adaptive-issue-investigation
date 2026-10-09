@@ -60,14 +60,14 @@ def _pace(est_tokens):
         time.sleep(max(wait, 0.5))
 
 
-def llm_call(messages, tools=None, tool_choice="auto", tag=""):
+def llm_call(messages, tools=None, tool_choice="auto", tag="", reasoning_effort="low"):
     global _daily_total, _last_total
     if _daily_total >= DAILY_TOKEN_BUDGET:
         raise RuntimeError(f"Daily token budget reached ({_daily_total}). Switch provider or wait.")
 
     _pace(_last_total)
 
-    kwargs = dict(model=MODEL, messages=messages, temperature=0, reasoning_effort="low")
+    kwargs = dict(model=MODEL, messages=messages, temperature=0, reasoning_effort=reasoning_effort)
     if tools:
         kwargs.update(tools=tools, tool_choice=tool_choice)
 
