@@ -10,6 +10,10 @@ from tools.registry import TOOL_SCHEMAS
 MAX_STEPS, MIN_DIAG, MAX_EXPERIMENTS, PROMPT_LIMIT = 12, 3, 3, 6000
 FORCE = {"type": "function", "function": {"name": "submit_diagnosis"}}
 TRACE_DIR = Path("logs/traces")
+MAX_STALLS = 3
+
+NUDGE = ("Nothing has been submitted: text replies are not recorded. To continue, call a diagnostic tool. "
+         "To finish, call the submit_diagnosis tool with your answer.")
 
 # Inject a required `hypothesis` arg into every diagnostic schema (registry.py stays untouched).
 def _with_hypothesis(schemas):
@@ -39,22 +43,44 @@ def _validate(a):
         return "confidence must be a number between 0 and 1"
     if not isinstance(a.get("supporting_evidence"), list) or not a["supporting_evidence"]:
         return "supporting_evidence must be a non-empty list"
-    if not isinstance(a.get("alternatives_ruled_out"), list):
-        return "alternatives_ruled_out must be a list"
+    alts = a.get("alternatives_ruled_out")
+    if not isinstance(alts, list): return "alternatives_ruled_out must be a list"
+    for x in alts:
+        if not isinstance(x, dict) or x.get("cause") not in LABELS or not str(x.get("evidence", "")).strip():
+            return "each alternatives_ruled_out item needs a valid cause and a non-empty evidence string"
+    if any(x["cause"] == a["label"] for x in alts):
+        return "alternatives_ruled_out cannot include your own label"
     return None
 
 def investigate(sid, seed=0, max_steps=MAX_STEPS, effort="low", llm=llm_call, save=True):
     sess = Session(make_scenario(sid, seed))
+    base = sess.call("get_metrics", {"split": "val"})["result"]   # internal baseline, not shown to the agent
     history = [{"role": "user", "content": "Investigate this experiment.\n" + json.dumps(sess.task_info())}]
     trace, seen, n_exp, n_diag, tokens = [], set(), 0, 0, 0
+    stalls = 0
+    baseline_seen = False
     diagnosis, stop = None, "no_submit"
 
     for step in range(1, max_steps + 1):
         msgs = [{"role": "system", "content": SYSTEM_PROMPT}] + history
         est = int((len(json.dumps(msgs)) + len(json.dumps(TOOLS))) / 3.5)   # rough token estimate
         force = step == max_steps or est > PROMPT_LIMIT                      # code forces the end
-        resp = llm(msgs, tools=TOOLS, tool_choice=FORCE if force else "auto",
-                   tag=f"{sid}_s{seed}_step{step}", reasoning_effort=effort)
+        # Structural force: on the last step the model is only OFFERED submit_diagnosis.
+        call_tools, choice = ([SUBMIT_TOOL], "required") if force else (TOOLS, "required")
+        try:
+            resp = llm(msgs, tools=call_tools, tool_choice=choice,
+                       tag=f"{sid}_s{seed}_step{step}", reasoning_effort=effort)
+        except Exception as e:   # provider error: keep the trace instead of losing the run
+            txt = str(e)
+            print(f"[llm_error] step {step}: {txt[:200]}")
+            trace.append({"step": step, "event": "llm_error", "tool": "-", "args": None,
+                          "result": txt[:500], "result_chars": 0})
+            if "tool_use_failed" in txt and stalls < MAX_STALLS - 1:   # model answered in prose: recover
+                stalls += 1
+                history.append({"role": "user", "content": NUDGE})
+                continue
+            stop = "llm_error"
+            break
         u = resp.usage
         tokens += u.total_tokens
         msg = resp.choices[0].message
@@ -68,11 +94,16 @@ def investigate(sid, seed=0, max_steps=MAX_STEPS, effort="low", llm=llm_call, sa
                                 for tc in calls]
         history.append(am)
 
-        if not calls:   # text-only turn: nudge, the step cap still applies
+        if not calls:   # text-only turn: explicit nudge; repeated stalls end the run
             trace.append({"step": step, "event": "no_tool_call", "text": (msg.content or "")[:300],
                           "prompt_tokens": u.prompt_tokens, "tokens": u.total_tokens})
-            history.append({"role": "user", "content": "Call a diagnostic tool or submit_diagnosis."})
+            stalls += 1
+            if stalls >= MAX_STALLS:
+                stop = "stalled"
+                break
+            history.append({"role": "user", "content": NUDGE})
             continue
+        stalls = 0
 
         done = False
         for i, tc in enumerate(calls):
@@ -100,6 +131,9 @@ def investigate(sid, seed=0, max_steps=MAX_STEPS, effort="low", llm=llm_call, sa
                     event, content = "duplicate", json.dumps({"note": "Already called with identical arguments; result unchanged. Use a different call or submit_diagnosis."})
                 elif name == "run_experiment" and n_exp >= MAX_EXPERIMENTS:
                     event, content = "exp_cap", json.dumps({"error": f"experiment limit ({MAX_EXPERIMENTS}) reached"})
+                elif name == "run_experiment" and not baseline_seen :
+                    event, content = "rejected_no_baseline", json.dumps(
+                        {"error": "Read the baseline validation metrics (get_metrics, split=val) before running experiments."})
                 else:
                     seen.add(key)
                     out = sess.call(name, args)
@@ -107,8 +141,17 @@ def investigate(sid, seed=0, max_steps=MAX_STEPS, effort="low", llm=llm_call, sa
                     if '"error"' in content:
                         event = "tool_error"   # logged distinctly; a failed call doesn't burn an experiment
                     else:
+                        if name == "run_experiment" and isinstance(out, dict) and isinstance(out.get("result"), dict):
+                            r = out["result"]
+                            r["identical_to_baseline"] = {
+                                "val_metrics": all(r["val"].get(k) == base.get(k) for k in ("accuracy", "macro_f1", "macro_recall")),
+                                "model_size": r.get("model") == base.get("model")}
+                            content = json.dumps(out, default=str)
                         n_diag += 1
+                        if name == "get_metrics" and isinstance(args, dict) and args.get("split") == "val":
+                            baseline_seen = True
                         if name == "run_experiment": n_exp += 1
+                    
 
             trace.append({"step": step, "hypothesis": hyp, "tool": name, "args": args, "event": event,
                           "result": content, "result_chars": len(content),
@@ -138,7 +181,7 @@ def show(r):   # compact human-readable trace
     d = r["diagnosis"]
     print("DIAGNOSIS:", d["label"], d["confidence"])
     for e in d["supporting_evidence"]: print("  +", e[:160])
-    for e in d["alternatives_ruled_out"]: print("  -", e[:160])
+    for e in d["alternatives_ruled_out"]: print(f"  - {e['cause']}: {e['evidence'][:140]}")
 
 if __name__ == "__main__":   # python -m agents.loop S1 0 low
     sid = sys.argv[1]; seed = int(sys.argv[2]) if len(sys.argv) > 2 else 0
