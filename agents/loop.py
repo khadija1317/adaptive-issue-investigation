@@ -33,9 +33,27 @@ TOOLS = _with_hypothesis(TOOL_SCHEMAS) + [SUBMIT_TOOL]
 def make_scenario(sid, seed=0):
     sc = SCENARIOS[sid]
     return dataclasses.replace(sc, base_config=dataclasses.replace(sc.base_config, seed=seed))
-
+# Code-side check of the recommended fix (the same rules run_experiment enforces, but never touches test).
+def _check_config(cfg, sess):
+    if not isinstance(cfg, dict): return "recommended_config must be an object ({} means no change)"
+    bad = set(cfg) - sess.KNOBS
+    if bad: return f"unknown knobs {sorted(bad)}; allowed: {sorted(sess.KNOBS)}"
+    tree = sess.rec.config.model == "tree"
+    isint = lambda v: isinstance(v, int) and not isinstance(v, bool)
+    isnum = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
+    ok = {"max_depth": lambda v: tree and isint(v) and v >= 1,
+          "min_samples_leaf": lambda v: tree and isint(v) and v >= 1,
+          "C": lambda v: (not tree) and isnum(v) and v > 0,
+          "train_fraction": lambda v: isnum(v) and 0 < v <= 1,
+          "class_weight": lambda v: v == "balanced",
+          "scaling": lambda v: v in ("none", "standard", "per_split"),
+          "split_strategy": lambda v: v in ("random", "by_size"),
+          "drop_features": lambda v: isinstance(v, list) and all(f in sess.rec.feature_names for f in v)}
+    for k, v in cfg.items():
+        if not ok.get(k, lambda v: False)(v): return f"invalid value for {k}: {v!r} (check the model type and the allowed range)"
+    return None
 # Code-side validation of the final answer (the prompt can't enforce this).
-def _validate(a):
+def _validate(a, sess):
     if not isinstance(a, dict): return "submit_diagnosis arguments must be a JSON object"
     if a.get("label") not in LABELS: return f"label must be one of {LABELS}"
     c = a.get("confidence")
@@ -50,7 +68,7 @@ def _validate(a):
             return "each alternatives_ruled_out item needs a valid cause and a non-empty evidence string"
     if any(x["cause"] == a["label"] for x in alts):
         return "alternatives_ruled_out cannot include your own label"
-    return None
+    return _check_config(a.get("recommended_config"), sess)
 
 def investigate(sid, seed=0, max_steps=MAX_STEPS, effort="low", llm=llm_call, save=True):
     sess = Session(make_scenario(sid, seed))
@@ -114,7 +132,7 @@ def investigate(sid, seed=0, max_steps=MAX_STEPS, effort="low", llm=llm_call, sa
                 event, content = "malformed_args", json.dumps({"error": "arguments were not valid JSON"})
 
             if event == "ok" and name == "submit_diagnosis":
-                err = _validate(args)
+                err = _validate(args, sess)
                 if err:
                     event, content = "invalid_submit", json.dumps({"error": err})
                 elif n_diag < MIN_DIAG and not force:
@@ -163,7 +181,7 @@ def investigate(sid, seed=0, max_steps=MAX_STEPS, effort="low", llm=llm_call, sa
 
     if diagnosis is None:
         diagnosis = {"label": "other_or_inconclusive", "confidence": 0.0,
-                     "supporting_evidence": [], "alternatives_ruled_out": []}
+                     "supporting_evidence": [], "recommended_config": {},"alternatives_ruled_out": []}
     result = {"scenario": sid, "seed": seed, "effort": effort, "stop_reason": stop,
               "llm_calls": step, "experiments": n_exp, "tokens_total": tokens,
               "diagnosis": diagnosis, "trace": trace}

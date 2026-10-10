@@ -51,9 +51,14 @@ SUBMIT_TOOL = {
                         "required": ["cause", "evidence"],
                     },
                     "description": "Causes you ruled out, each with contradicting evidence. Leave out any cause you did not test.",
-                }, 
+                },
+                "recommended_config": {
+    "type": "object",
+    "description": "Knob changes you recommend, applied to the ORIGINAL config. Use {} if you recommend no change.",
+}, 
+
             },
-            "required": ["label", "confidence", "supporting_evidence", "alternatives_ruled_out"],
+        "required": ["label", "confidence", "supporting_evidence", "alternatives_ruled_out", "recommended_config"],
         },
     },
 }

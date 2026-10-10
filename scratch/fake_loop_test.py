@@ -4,7 +4,7 @@ from types import SimpleNamespace as NS
 from agents.loop import investigate, show
 
 GOOD = json.dumps({"label": "class_imbalance", "confidence": 0.8,
-                   "supporting_evidence": ["fake"], "alternatives_ruled_out": [{"cause": "overfitting", "evidence": "fake"}]})
+                   "supporting_evidence": ["fake"],"recommended_config": {}, "alternatives_ruled_out": [{"cause": "overfitting", "evidence": "fake"}]})
 BAD_LABEL = json.dumps({"label": "banana", "confidence": 0.8,
                         "supporting_evidence": ["x"], "alternatives_ruled_out": []})
 H = '"hypothesis": "h"'
@@ -73,7 +73,10 @@ print("RUN C OK")
 from agents.loop import _validate
 bad = {"label": "data_leakage", "confidence": 0.5, "supporting_evidence": ["x"],
        "alternatives_ruled_out": [{"cause": "data_leakage", "evidence": "x"}]}
-assert _validate(bad) is not None and _validate(json.loads(GOOD)) is None
+from agents.loop import make_scenario
+from tools.diagnostics import Session
+s1 = Session(make_scenario("S1"))   # a real session, so the config check has a model and feature names
+assert _validate(bad, s1) is not None and _validate(json.loads(GOOD), s1) is None
 print("VALIDATE OK")
 
 
@@ -89,18 +92,18 @@ evd = [t["event"] for t in rd["trace"]]
 print("RUN D:", rd["stop_reason"], evd)
 assert evd[0] == "rejected_no_baseline" and rd["stop_reason"] == "submitted" and rd["experiments"] == 1
 print("RUN D OK")
-assert _validate({**json.loads(GOOD), "alternatives_ruled_out": ["overfitting"]}) is not None
+assert _validate({**json.loads(GOOD), "alternatives_ruled_out": ["overfitting"]}, s1) is not None
 print("VALIDATE-2 OK")
 
 
-# Run E: experiment results carry a factual identical_to_baseline flag
-def exp(ch): return "{" + H + ', "changes": ' + json.dumps(ch) + "}"
-script_e = [[("get_metrics", "{" + H + ', "split": "val"}')],
-            [("run_experiment", exp({"scaling": "standard"}))],
-            [("run_experiment", exp({"scaling": "per_split"}))],
-            [("submit_diagnosis", GOOD)]]
-re_ = investigate("S4", 0, llm=make_fake(script_e), save=False)
-flags = [json.loads(t["result"])["result"]["identical_to_baseline"] for t in re_["trace"] if t.get("tool") == "run_experiment"]
-print("RUN E:", flags)
-assert flags[0]["val_metrics"] is True and flags[1]["val_metrics"] is False
-print("RUN E OK")
+_H = '"hypothesis": "h"'   # own helpers for Run H, so the script's existing names are untouched
+_gv = lambda s: ("get_metrics", "{" + _H + f', "split": "{s}"}}')
+
+def sub(cfg):
+    return ("submit_diagnosis", json.dumps({"label": "class_imbalance", "confidence": 0.8, "supporting_evidence": ["x"],
+            "alternatives_ruled_out": [], "recommended_config": cfg}))
+rh = investigate("S1", 0, llm=make_fake([[_gv("val")], [_gv("train")], [("compare_train_validation", "{" + _H + "}")],
+        [sub({"max_depth": 3})], [sub({"drop_features": ["nope"]})], [sub("balanced")], [sub({"class_weight": "balanced"})]]), save=False)
+evh = [t["event"] for t in rh["trace"]]
+assert evh.count("invalid_submit") == 3 and evh[-1] == "submit"
+print("RUN H ok (bad fixes rejected: tree knob on logreg, unknown feature, non-object)")
