@@ -3,7 +3,12 @@ import sys
 from evaluation.eval_meta import EVAL_META
 from evaluation.score_fix import score_fix
 
+
 def scored(r):   # diagnosis vs ground truth, recommended fix vs hidden test
+    if r.get("stop_reason") == "llm_error":
+        print(f"INVALID RUN {r['scenario']} seed {r['seed']}: provider error, not a model result (tokens {r['tokens_total']}). Not scored.")
+        return None, None
+     # diagnosis vs ground truth, recommended fix vs hidden test
     sid, seed, d = r["scenario"], r["seed"], r["diagnosis"]
     fix = score_fix(sid, d.get("recommended_config", {}), seed)
     ok = d["label"] == EVAL_META[sid]["ground_truth"]

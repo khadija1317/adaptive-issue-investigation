@@ -62,7 +62,7 @@ def _pace(est_tokens):
 
 def llm_call(messages, tools=None, tool_choice="auto", tag="", reasoning_effort="low"):
     global _daily_total, _last_total
-    if _daily_total >= DAILY_TOKEN_BUDGET:
+    if _daily_total >= 0.9 * DAILY_TOKEN_BUDGET:
         raise RuntimeError(f"Daily token budget reached ({_daily_total}). Switch provider or wait.")
 
     _pace(_last_total)

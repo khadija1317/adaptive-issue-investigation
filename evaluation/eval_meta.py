@@ -33,3 +33,15 @@ EVIDENCE = {
 }
 for _sid, _e in EVIDENCE.items():
     EVAL_META[_sid]["evidence_true"], EVAL_META[_sid]["evidence_decoy"] = _e["true"], _e["decoy"]
+
+
+FIX = {   # (kind, metric, reference fix); the reference is the scenario's designed repair
+ "S1": ("gain",  "macro_recall", {"class_weight": "balanced"}),
+ "S2": ("gain",  "accuracy",     {"train_fraction": 1.0}),
+ "S3": ("gain",  "accuracy",     {"drop_features": ["aux_score"]}),
+ "S4": ("agree", "accuracy",     {"scaling": "per_split"}),
+ "S5": ("agree", "accuracy",     {"split_strategy": "random"}),
+ "S6": ("gain",  "accuracy",     {"drop_features": ["aux_score"]}),
+}
+for _sid, (_k, _m, _r) in FIX.items():
+    EVAL_META[_sid]["fix"] = {"kind": _k, "metric": _m, "reference": _r}

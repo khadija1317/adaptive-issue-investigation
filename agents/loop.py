@@ -1,5 +1,6 @@
 # agents/loop.py
-import copy, dataclasses, json, sys
+
+import copy, dataclasses, json, sys, time
 from pathlib import Path
 from agents.llm import llm_call
 from agents.prompt import SYSTEM_PROMPT, SUBMIT_TOOL, LABELS
@@ -14,6 +15,14 @@ MAX_STALLS = 3
 
 NUDGE = ("Nothing has been submitted: text replies are not recorded. To continue, call a diagnostic tool. "
          "To finish, call the submit_diagnosis tool with your answer.")
+
+TRANSIENT = ("connection error", "timed out", "timeout", "502", "503", "504", "overloaded")
+def _llm_retry(llm, *a, tries=3, **k):   # retry network blips; model-side errors still propagate
+    for i in range(tries):
+        try: return llm(*a, **k)
+        except Exception as e:
+            if i == tries - 1 or not any(t in str(e).lower() for t in TRANSIENT): raise
+            print(f"[retry {i+1}] {str(e)[:80]}"); time.sleep(5 * (i + 1))
 
 # Inject a required `hypothesis` arg into every diagnostic schema (registry.py stays untouched).
 def _with_hypothesis(schemas):
@@ -86,8 +95,8 @@ def investigate(sid, seed=0, max_steps=MAX_STEPS, effort="low", llm=llm_call, sa
         # Structural force: on the last step the model is only OFFERED submit_diagnosis.
         call_tools, choice = ([SUBMIT_TOOL], "required") if force else (TOOLS, "required")
         try:
-            resp = llm(msgs, tools=call_tools, tool_choice=choice,
-                       tag=f"{sid}_s{seed}_step{step}", reasoning_effort=effort)
+            resp = _llm_retry(llm, msgs, tools=call_tools, tool_choice=choice,
+                              tag=f"{sid}_s{seed}_step{step}", reasoning_effort=effort)
         except Exception as e:   # provider error: keep the trace instead of losing the run
             txt = str(e)
             print(f"[llm_error] step {step}: {txt[:200]}")

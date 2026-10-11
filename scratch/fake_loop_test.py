@@ -107,3 +107,19 @@ rh = investigate("S1", 0, llm=make_fake([[_gv("val")], [_gv("train")], [("compar
 evh = [t["event"] for t in rh["trace"]]
 assert evh.count("invalid_submit") == 3 and evh[-1] == "submit"
 print("RUN H ok (bad fixes rejected: tree knob on logreg, unknown feature, non-object)")
+
+import agents.loop as L
+_sleep = L.time.sleep; L.time.sleep = lambda s: None   # no real waiting in the test
+def conn_flaky(script, n_fail):
+    base, st = make_fake(script), {"n": 0}
+    def f(*a, **k):
+        st["n"] += 1
+        if st["n"] <= n_fail: raise RuntimeError("Connection error.")
+        return base(*a, **k)
+    return f
+ri = investigate("S1", 0, llm=conn_flaky(script_c, 2), save=False)
+assert ri["stop_reason"] == "submitted" and "llm_error" not in [t["event"] for t in ri["trace"]]
+rj = investigate("S1", 0, llm=conn_flaky(script_c, 3), save=False)
+assert rj["stop_reason"] == "llm_error"
+L.time.sleep = _sleep
+print("RUN I ok (transient errors retried; persistent ones still end the run)")
