@@ -31,5 +31,9 @@ SCENARIOS = {
  "S6": Scenario("S6", "breast_cancer", ExperimentConfig(model="tree"),
       "Train score perfect, validation score poor.",
       split_injector=partial(inj.add_leaky_feature, signal_in=("train",), noise=0.3)),
+ # S7: compound. Visible but non-causal imbalance (data stage) + train-only leak (split stage).
+ "S7": Scenario("S7", "breast_cancer", ExperimentConfig(model="tree"),
+      "Train score perfect, validation score poor.",
+      data_injector=partial(inj.make_imbalanced, minority_class=0, minority_frac=0.25),
+      split_injector=partial(inj.add_leaky_feature, signal_in=("train",), noise=0.1)),
 }
-

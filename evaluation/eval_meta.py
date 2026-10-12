@@ -5,6 +5,7 @@ EVAL_META = {
  "S4": {"ground_truth": "bad_preprocessing",  "decoy": "distribution_shift",   "difficulty": "medium"},
  "S5": {"ground_truth": "distribution_shift", "decoy": "overfitting",          "difficulty": "medium"},
  "S6": {"ground_truth": "data_leakage",       "decoy": "overfitting",          "difficulty": "hard"},
+ "S7": {"ground_truth": "data_leakage",       "decoy": "class_imbalance",      "difficulty": "medium"},
 }  
 
 def X(when, val=None):   # experiment atom: which changes count, and which val outcome makes it evidence
@@ -30,6 +31,7 @@ EVIDENCE = {
                  [X(rand_split, "up")], [X(per_split, "down")]],
         "decoy": [[X(rand_split, "up")], [X(less_capacity, "no_gain")]]},
  "S6": {"true": [[T("check_leakage"), X(drop_aux, "up")]], "decoy": [[X(less_capacity, "no_gain")]]},
+ "S7": {"true": [[T("check_leakage"), X(drop_aux, "up")]], "decoy": [[X(balanced, "no_gain")]]},
 }
 for _sid, _e in EVIDENCE.items():
     EVAL_META[_sid]["evidence_true"], EVAL_META[_sid]["evidence_decoy"] = _e["true"], _e["decoy"]
@@ -42,6 +44,7 @@ FIX = {   # (kind, metric, reference fix); the reference is the scenario's desig
  "S4": ("agree", "accuracy",     {"scaling": "per_split"}),
  "S5": ("agree", "accuracy",     {"split_strategy": "random"}),
  "S6": ("gain",  "accuracy",     {"drop_features": ["aux_score"]}),
+ "S7": ("gain",  "accuracy",     {"drop_features": ["aux_score"]}),
 }
 for _sid, (_k, _m, _r) in FIX.items():
     EVAL_META[_sid]["fix"] = {"kind": _k, "metric": _m, "reference": _r}
