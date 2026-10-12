@@ -123,3 +123,23 @@ rj = investigate("S1", 0, llm=conn_flaky(script_c, 3), save=False)
 assert rj["stop_reason"] == "llm_error"
 L.time.sleep = _sleep
 print("RUN I ok (transient errors retried; persistent ones still end the run)")
+# Run J: output_parse_failed (model wrote prose instead of a tool call) is recovered like tool_use_failed
+def flaky_msgs(script, msgs):
+    base, st = make_fake(script), {"n": 0}
+    def f(*a, **k):
+        st["n"] += 1
+        if st["n"] <= len(msgs):
+            raise RuntimeError(msgs[st["n"] - 1])
+        return base(*a, **k)
+    return f
+PARSE = "Error code: 400 - output_parse_failed"
+TOOLF = "Error code: 400 - tool_use_failed"
+rj1 = investigate("S1", 0, llm=flaky_msgs(script_c, [PARSE, PARSE]), save=False)
+assert rj1["stop_reason"] == "submitted", rj1["stop_reason"]
+rj2 = investigate("S1", 0, llm=flaky_msgs(script_c, [TOOLF, PARSE]), save=False)    # the real S4 sequence
+assert rj2["stop_reason"] == "submitted", rj2["stop_reason"]
+rj3 = investigate("S1", 0, llm=flaky_msgs(script_c, [PARSE, PARSE, PARSE]), save=False)   # persistent: still ends
+assert rj3["stop_reason"] == "llm_error", rj3["stop_reason"]
+rj4 = investigate("S1", 0, llm=flaky_msgs(script_c, ["Error code: 401 - invalid_api_key"]), save=False)   # other errors: not nudged
+assert rj4["stop_reason"] == "llm_error" and rj4["llm_calls"] == 1
+print("RUN J ok (output_parse_failed recovered; persistent and unrelated errors still end the run)")

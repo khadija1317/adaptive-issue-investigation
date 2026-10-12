@@ -102,7 +102,7 @@ def investigate(sid, seed=0, max_steps=MAX_STEPS, effort="low", llm=llm_call, sa
             print(f"[llm_error] step {step}: {txt[:200]}")
             trace.append({"step": step, "event": "llm_error", "tool": "-", "args": None,
                           "result": txt[:500], "result_chars": 0})
-            if "tool_use_failed" in txt and stalls < MAX_STALLS - 1:   # model answered in prose: recover
+            if any(c in txt for c in ("tool_use_failed", "output_parse_failed")) and stalls < MAX_STALLS - 1:   # model answered in prose: recover
                 stalls += 1
                 history.append({"role": "user", "content": NUDGE})
                 continue
