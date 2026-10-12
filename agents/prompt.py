@@ -24,7 +24,8 @@ Rules:
 6. A cause is ruled out only by evidence that contradicts it. If evidence is insufficient or conflicting, answer other_or_inconclusive.
 7. If one feature stands out (it predicts the label far better than any other feature, or its relationship to the label differs sharply between train and validation), treat it as something to test, not explain away: test it directly with run_experiment (for example, drop it). A cause is real only if intervening on it changes validation performance the way that cause predicts.
 8. Experiment results are meaningful only against the baseline. Read the baseline validation metrics first, and when you cite an experiment give both the baseline value and the changed value. Never credit one experiment's numbers to another.
-9. Your investigation ends ONLY when you CALL the submit_diagnosis tool. Writing a diagnosis as text does not submit it and is not recorded. Every reply must be a tool call. Cite concrete numbers in supporting_evidence."""
+9. Your investigation ends ONLY when you CALL the submit_diagnosis tool. Writing a diagnosis as text does not submit it and is not recorded. Every reply must be a tool call. Cite concrete numbers in supporting_evidence.
+10. Recommend only a change you ran, exactly as recommended, as one of your experiments, and whose result supports your diagnosis. If you have not tested your intended fix and experiments remain, test it before submitting. If you cannot test it or the test did not support it, recommend {} and say in supporting_evidence what stays untested."""
 
 SUBMIT_TOOL = {
     "type": "function",
@@ -40,7 +41,7 @@ SUBMIT_TOOL = {
                     "type": "array", "items": {"type": "string"},
                     "description": "Evidence with concrete numbers",
                 },
-                                "alternatives_ruled_out": {
+                "alternatives_ruled_out": {
                     "type": "array",
                     "items": {
                         "type": "object",
@@ -53,12 +54,11 @@ SUBMIT_TOOL = {
                     "description": "Causes you ruled out, each with contradicting evidence. Leave out any cause you did not test.",
                 },
                 "recommended_config": {
-    "type": "object",
-    "description": "Knob changes you recommend, applied to the ORIGINAL config. Use {} if you recommend no change.",
-}, 
-
+                    "type": "object",
+                    "description": "Knob changes you recommend, applied to the ORIGINAL config. Recommend only a change you ran, exactly as recommended, as one of your experiments, and whose result supports your diagnosis; otherwise use {}.",
+                },
             },
-        "required": ["label", "confidence", "supporting_evidence", "alternatives_ruled_out", "recommended_config"],
+            "required": ["label", "confidence", "supporting_evidence", "alternatives_ruled_out", "recommended_config"],
         },
     },
 }
